@@ -1,3 +1,8 @@
+### Installation
+Install as GIT Package in UnityPackageManager
+
+        https://github.com/unitycoder/AmplifyOcclusion-URP.git
+
 # AmplifyOcclusion-URP
 https://github.com/AmplifyCreations/AmplifyOcclusion \
 Fork: Ported to **URP 6000.3**
