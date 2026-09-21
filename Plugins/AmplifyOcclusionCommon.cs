@@ -49,11 +49,21 @@ public static class AmplifyOcclusionCommon
 												int width, int height,
 												RenderTextureFormat format = RenderTextureFormat.Default,
 												RenderTextureReadWrite readWrite = RenderTextureReadWrite.Default,
-												FilterMode filterMode = FilterMode.Point )
+												FilterMode filterMode = FilterMode.Point,
+												int slices = 1 )
 	{
 		int id = Shader.PropertyToID( propertyName );
 
-		cb.GetTemporaryRT( id, width, height, 0, filterMode, format, readWrite );
+		var desc = new RenderTextureDescriptor( Mathf.Max( width, 1 ), Mathf.Max( height, 1 ), format, 0 )
+		{
+			dimension = ( slices > 1 ) ? TextureDimension.Tex2DArray : TextureDimension.Tex2D,
+			volumeDepth = Mathf.Max( slices, 1 ),
+			sRGB = ( readWrite == RenderTextureReadWrite.sRGB ) ||
+				   ( readWrite == RenderTextureReadWrite.Default && QualitySettings.activeColorSpace == ColorSpace.Linear ),
+			msaaSamples = 1
+		};
+
+		cb.GetTemporaryRT( id, desc, filterMode );
 
 		return id;
 	}
@@ -71,12 +81,19 @@ public static class AmplifyOcclusionCommon
 												RenderTextureReadWrite readWrite,
 												FilterMode filterMode = FilterMode.Point,
 												int antiAliasing = 1,
-												bool aUseMipMap = false )
+												bool aUseMipMap = false,
+												int slices = 1 )
 	{
 		width = Mathf.Clamp( width, 1, 65536 );
 		height = Mathf.Clamp( height, 1, 65536 );
 
 		RenderTexture rt = new RenderTexture( width, height, 0, format, readWrite ) { hideFlags = HideFlags.DontSave };
+
+		if( slices > 1 )
+		{
+			rt.dimension = TextureDimension.Tex2DArray;
+			rt.volumeDepth = slices;
+		}
 
 		rt.name = name;
 		rt.filterMode = filterMode;
@@ -107,6 +124,14 @@ public static class AmplifyOcclusionCommon
 	{
 	#if UNITY_EDITOR
 		return aCamera.stereoEnabled && ( PlayerSettings.stereoRenderingPath == StereoRenderingPath.SinglePass );
+	#else
+
+		#if UNITY_2017_2_OR_NEWER && !UNITY_SWITCH && !UNITY_XBOXONE && !UNITY_PS4
+			return	aCamera.stereoEnabled && ( UnityEngine.XR.XRSettings.eyeTextureDesc.vrUsage == VRTextureUsage.TwoEyes );
+		#else
+			return	false;
+		#endif
+
 	#endif
 	}
 
@@ -114,6 +139,14 @@ public static class AmplifyOcclusionCommon
 	{
 	#if UNITY_EDITOR
 		return aCamera.stereoEnabled && ( PlayerSettings.stereoRenderingPath == StereoRenderingPath.MultiPass );
+	#else
+
+		#if UNITY_2017_2_OR_NEWER && !UNITY_SWITCH && !UNITY_XBOXONE && !UNITY_PS4
+			return	aCamera.stereoEnabled && ( UnityEngine.XR.XRSettings.eyeTextureDesc.vrUsage == VRTextureUsage.OneEye );
+		#else
+			return	false;
+		#endif
+
 	#endif
 	}
 
@@ -181,6 +214,43 @@ public static class AmplifyOcclusionCommon
 		}
 
 		cb.SetGlobalFloat( PropertyID._AO_HalfProjScale, projScale );
+	}
+
+	private static readonly Vector4[] s_uvToView = new Vector4[ 2 ];
+
+	// URP / XR aware version: size comes from the camera target descriptor (per-eye in XR, includes render scale),
+	// UV->view comes from each eye's projection matrix (handles asymmetric VR frusta).
+	public static void UpdateGlobalShaderConstantsSRP( CommandBuffer cb, ref TargetDesc aTarget,
+														int aWidth, int aHeight, int aSlices,
+														Matrix4x4 aProjLeft, Matrix4x4 aProjRight,
+														bool aOrthographic, float aOrthoSize, bool isDownsample )
+	{
+		aTarget.fullWidth = aWidth;
+		aTarget.fullHeight = aHeight;
+		aTarget.width = aWidth;
+		aTarget.height = aHeight;
+		aTarget.slices = aSlices;
+		aTarget.oneOverWidth = 1.0f / aWidth;
+		aTarget.oneOverHeight = 1.0f / aHeight;
+
+		s_uvToView[ 0 ] = UVToView( aProjLeft );
+		s_uvToView[ 1 ] = UVToView( aProjRight );
+		cb.SetGlobalVectorArray( PropertyID._AO_UVToViewArray, s_uvToView );
+
+		// P[1,1] = 1 / tan( fovY / 2 )  ->  height / ( 2 * tan( fovY / 2 ) ) = height * P[1,1] / 2
+		float projScale = aOrthographic ? aHeight / aOrthoSize : aHeight * aProjLeft.m11 * 0.5f;
+		projScale *= isDownsample ? 0.25f : 0.5f;
+
+		cb.SetGlobalFloat( PropertyID._AO_HalfProjScale, projScale );
+	}
+
+	// viewPos.xy = ( uv * xy + zw ) * linearEyeDepth, from a (non-GPU) projection matrix
+	private static Vector4 UVToView( Matrix4x4 p )
+	{
+		return new Vector4( 2.0f / p.m00,
+							2.0f / p.m11,
+							( p.m02 - 1.0f ) / p.m00,
+							( p.m12 - 1.0f ) / p.m11 );
 	}
 }
 
@@ -276,6 +346,7 @@ public struct TargetDesc
 	public int height;
 	public float oneOverWidth;
 	public float oneOverHeight;
+	public int slices;
 }
 
 public static class ShaderPass
@@ -355,6 +426,7 @@ public static class PropertyID
 	public static readonly int _AO_GBufferAlbedo = Shader.PropertyToID( "_AO_GBufferAlbedo" );
 	public static readonly int _AO_GBufferEmission = Shader.PropertyToID( "_AO_GBufferEmission" );
 	public static readonly int _AO_UVToView = Shader.PropertyToID( "_AO_UVToView" );
+	public static readonly int _AO_UVToViewArray = Shader.PropertyToID( "_AO_UVToViewArray" );
 	public static readonly int _AO_HalfProjScale = Shader.PropertyToID( "_AO_HalfProjScale" );
 	public static readonly int _AO_FadeParams = Shader.PropertyToID( "_AO_FadeParams" );
 	public static readonly int _AO_FadeValues = Shader.PropertyToID( "_AO_FadeValues" );

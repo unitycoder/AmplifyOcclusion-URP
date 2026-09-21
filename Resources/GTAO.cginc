@@ -13,7 +13,11 @@ half4x4	_AO_ProjMatrixRight;
 #endif
 
 
+#if defined( AO_UVTOVIEW_PER_EYE )
+#define _AO_UVToView _AO_UVToViewArray[ AO_EYE_INDEX ]
+#else
 half4		_AO_UVToView;
+#endif
 
 half		_AO_Bias;
 

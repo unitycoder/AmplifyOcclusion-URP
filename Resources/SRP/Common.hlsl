@@ -4,6 +4,9 @@
 #ifndef AMPLIFY_AO_COMMON_HLSL
 #define AMPLIFY_AO_COMMON_HLSL
 
+//#include "Packages/com.unity.postprocessing/PostProcessing/Shaders/StdLib.hlsl"
+//#include "../../Resources/PostProcessingStdLib.hlsl"
+
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
 
 // ---- Minimal replacement for PostProcessing v2 StdLib.hlsl ----
@@ -17,7 +20,7 @@ float4 unity_OrthoParams;
 float4 _ZBufferParams;
 float4 _ScreenParams;
 
-#define TEXTURE2D_SAMPLER2D(textureName, samplerName) TEXTURE2D(textureName); SAMPLER(samplerName)
+#define TEXTURE2D_SAMPLER2D(textureName, samplerName) TEXTURE2D_X(textureName); SAMPLER(samplerName)
 
 float Linear01Depth(float z)
 {
@@ -58,7 +61,31 @@ float4 UnityStereoTransformScreenSpaceTex(float4 uv)
     return uv;
 }
 
+// Normally declared by URP's UnityInput.hlsl (which we don't include).
+// Must come before UnityInstancing.hlsl; UNITY_STEREO_INSTANCING_ENABLED isn't defined yet here,
+// so key off the raw keywords.
+#if defined(STEREO_INSTANCING_ON)
+static uint unity_StereoEyeIndex;
+#endif
+
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/UnityInstancing.hlsl"
+
+// ---- XR single-pass instanced: textures are Texture2DArrays with one slice per eye ----
+#if defined(UNITY_STEREO_INSTANCING_ENABLED)
+    #define AO_EYE_INDEX                            unity_StereoEyeIndex
+    #define TEXTURE2D_X(textureName)                TEXTURE2D_ARRAY(textureName)
+    #define SAMPLE_TEXTURE2D_X(t, s, uv)            SAMPLE_TEXTURE2D_ARRAY(t, s, uv, AO_EYE_INDEX)
+    #define SAMPLE_TEXTURE2D_X_LOD(t, s, uv, lod)   SAMPLE_TEXTURE2D_ARRAY_LOD(t, s, uv, AO_EYE_INDEX, lod)
+#else
+    #define AO_EYE_INDEX                            0
+    #define TEXTURE2D_X(textureName)                TEXTURE2D(textureName)
+    #define SAMPLE_TEXTURE2D_X                      SAMPLE_TEXTURE2D
+    #define SAMPLE_TEXTURE2D_X_LOD                  SAMPLE_TEXTURE2D_LOD
+#endif
+
+// Per-eye UV -> view-space reconstruction (VR eyes have asymmetric frusta). Used by GTAO.cginc
+#define AO_UVTOVIEW_PER_EYE
+float4 _AO_UVToViewArray[2];
 
 
 #if !defined( UNITY_PI )
@@ -93,7 +120,7 @@ float4 _CameraMotionVectorsTexture_TexelSize;
 
 inline half2 FetchMotion( const half2 aUV )
 {
-	return SAMPLE_TEXTURE2D( _CameraMotionVectorsTexture, sampler_CameraMotionVectorsTexture, UnityStereoTransformScreenSpaceTex( aUV ) ).rg;
+	return SAMPLE_TEXTURE2D_X( _CameraMotionVectorsTexture, sampler_CameraMotionVectorsTexture, UnityStereoTransformScreenSpaceTex( aUV ) ).rg;
 }
 
 
@@ -102,7 +129,7 @@ float4	_AO_CurrMotionIntensity_TexelSize;
 
 inline half FetchMotionIntensity( const half2 aUV )
 {
-	return  SAMPLE_TEXTURE2D( _AO_CurrMotionIntensity, sampler_AO_CurrMotionIntensity, UnityStereoTransformScreenSpaceTex( aUV ) ).r;
+	return  SAMPLE_TEXTURE2D_X( _AO_CurrMotionIntensity, sampler_AO_CurrMotionIntensity, UnityStereoTransformScreenSpaceTex( aUV ) ).r;
 }
 
 
@@ -111,7 +138,7 @@ float4	_AO_CurrOcclusionDepth_TexelSize;
 
 inline half2 FetchOcclusionDepth( const half2 aUV )
 {
-	return SAMPLE_TEXTURE2D( _AO_CurrOcclusionDepth, sampler_AO_CurrOcclusionDepth, UnityStereoTransformScreenSpaceTex( aUV ) ).rg;
+	return SAMPLE_TEXTURE2D_X( _AO_CurrOcclusionDepth, sampler_AO_CurrOcclusionDepth, UnityStereoTransformScreenSpaceTex( aUV ) ).rg;
 }
 
 
@@ -122,7 +149,7 @@ half4	_CameraDepthTexture_TexelSize;
 inline half SampleDepth0( const half2 aScreenPos )
 {
 	//return (aScreenPos).xxxx;
-	return SAMPLE_TEXTURE2D( _CameraDepthTexture, sampler_CameraDepthTexture, aScreenPos );
+	return SAMPLE_TEXTURE2D_X( _CameraDepthTexture, sampler_CameraDepthTexture, aScreenPos );
     //return SampleSceneDepth(UnityStereoTransformScreenSpaceTex(uv)).r;
 	//return SAMPLE_DEPTH_TEXTURE_LOD( _CameraDepthTexture, sampler_CameraDepthTexture, UnityStereoTransformScreenSpaceTex( aScreenPos ), 0 );
 }
@@ -132,7 +159,7 @@ half4		_AO_SourceDepthMipmap_TexelSize;
 
 inline half SampleDepth( const half2 aScreenPos, half aLOD )
 {
-	return SAMPLE_TEXTURE2D_LOD( _AO_SourceDepthMipmap, sampler_AO_SourceDepthMipmap, UnityStereoTransformScreenSpaceTex( aScreenPos ), aLOD ).r;
+	return SAMPLE_TEXTURE2D_X_LOD( _AO_SourceDepthMipmap, sampler_AO_SourceDepthMipmap, UnityStereoTransformScreenSpaceTex( aScreenPos ), aLOD ).r;
 }
 
 
@@ -148,7 +175,7 @@ TEXTURE2D_SAMPLER2D( _GBufferTexture1, sampler_GBufferTexture1 );
 
 inline half4 FetchGBufferNormals( const half2 aScreenPos )
 {
-	return SAMPLE_TEXTURE2D( _GBufferTexture1, sampler_GBufferTexture1, UnityStereoTransformScreenSpaceTex( aScreenPos * _ScreenToTargetScale.xy ) );
+	return SAMPLE_TEXTURE2D_X( _GBufferTexture1, sampler_GBufferTexture1, UnityStereoTransformScreenSpaceTex( aScreenPos * _ScreenToTargetScale.xy ) );
 }
 
 
@@ -189,7 +216,7 @@ float4	_AO_TemporalAccumm_TexelSize;
 
 inline half4 FetchTemporal( const half2 aScreenPos )
 {
-	return SAMPLE_TEXTURE2D( _AO_TemporalAccumm, sampler_AO_TemporalAccumm, UnityStereoTransformScreenSpaceTex( aScreenPos ) );
+	return SAMPLE_TEXTURE2D_X( _AO_TemporalAccumm, sampler_AO_TemporalAccumm, UnityStereoTransformScreenSpaceTex( aScreenPos ) );
 }
 
 TEXTURE2D_SAMPLER2D( _AO_CurrDepthSource, sampler_AO_CurrDepthSource );
@@ -197,7 +224,7 @@ half4		_AO_CurrDepthSource_TexelSize;
 
 inline half FetchCurrDepthSource( const half2 aScreenPos )
 {
-	return SAMPLE_TEXTURE2D( _AO_CurrDepthSource, sampler_AO_CurrDepthSource, UnityStereoTransformScreenSpaceTex( aScreenPos ) ).r;
+	return SAMPLE_TEXTURE2D_X( _AO_CurrDepthSource, sampler_AO_CurrDepthSource, UnityStereoTransformScreenSpaceTex( aScreenPos ) ).r;
 }
 
 

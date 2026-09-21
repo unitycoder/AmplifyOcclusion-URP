@@ -70,10 +70,13 @@ namespace AmplifyOcclusion
                     return;
                 const int width = 128;
                 defaultRampTex = new Texture2D(width, 1, TextureFormat.RGBA32, false);
-                var gradient = new Gradient() { colorKeys = new GradientColorKey[] { 
-                    new GradientColorKey(new Color(0, 0, 0, 1), 0), 
-                    new GradientColorKey(new Color(1, 1, 1, 1), 1), 
-                    }};
+                var gradient = new Gradient()
+                {
+                    colorKeys = new GradientColorKey[] {
+                    new GradientColorKey(new Color(0, 0, 0, 1), 0),
+                    new GradientColorKey(new Color(1, 1, 1, 1), 1),
+                    }
+                };
                 for (int x = 0; x < width; x++)
                     defaultRampTex.SetPixel(x, 0, gradient.Evaluate((float)x / width));
                 defaultRampTex.Apply(false, true);
@@ -98,16 +101,20 @@ namespace AmplifyOcclusion
                 m_quadMesh.SetIndices(new int[] { 0, 1, 2, 3 }, MeshTopology.Quads, 0);
             }
 
-            bool Prepare(CommandBuffer cmd, Camera cam)
+            bool Prepare(CommandBuffer cmd, PassData d)
             {
-                camera = cam;
+                camera = d.camera;
                 if (settings == null || !settings.IsActive())
                     return false;
 
                 createQuadMesh();
                 createDefaultRamp();
                 checkMaterials(true);
-                UpdateGlobalShaderConstants(cmd, camera);
+
+                AmplifyOcclusionCommon.UpdateGlobalShaderConstantsSRP(cmd, ref m_target, d.width, d.height, d.slices,
+                    d.projLeft, d.projRight, camera.orthographic, camera.orthographicSize, settings.Downsample.value);
+                cmd.SetGlobalVector(id_ScreenToTargetScale, Vector4.one);
+
                 checkParamsChanged(camera);
                 UpdateGlobalShaderConstants_AmbientOcclusion(cmd, camera);
                 updateParams();
@@ -142,6 +149,8 @@ namespace AmplifyOcclusion
                 public Camera camera;
                 public TextureHandle color;
                 public TextureHandle colorCopy;
+                public int width, height, slices;
+                public Matrix4x4 projLeft, projRight;
             }
 
             public override void RecordRenderGraph(RenderGraph renderGraph, ContextContainer frameData)
@@ -149,19 +158,20 @@ namespace AmplifyOcclusion
                 var cameraData = frameData.Get<UniversalCameraData>();
                 var resourceData = frameData.Get<UniversalResourceData>();
 
-                if (cameraData.cameraType != CameraType.Game || resourceData.isActiveTargetBackBuffer)
+                if (resourceData.isActiveTargetBackBuffer)
                     return;
 
                 settings = VolumeManager.instance.stack.GetComponent<AmplifyOcclusionVolume>();
                 if (settings == null || !settings.IsActive())
                     return;
 
-                // Apply shader samples _MainTex while writing to color -> needs a copy (no feedback loop)
                 var desc = renderGraph.GetTextureDesc(resourceData.activeColorTexture);
                 desc.name = "_AO_ColorCopy";
                 desc.clearBuffer = false;
                 desc.msaaSamples = MSAASamples.None;
                 TextureHandle colorCopy = renderGraph.CreateTexture(desc);
+
+                bool singlePassXR = cameraData.xr.enabled && cameraData.xr.singlePassEnabled;
 
                 using (var builder = renderGraph.AddUnsafePass<PassData>("Amplify Occlusion", out var passData))
                 {
@@ -170,13 +180,20 @@ namespace AmplifyOcclusion
                     passData.color = resourceData.activeColorTexture;
                     passData.colorCopy = colorCopy;
 
+                    // Per-eye size in XR, includes render scale
+                    passData.width = cameraData.cameraTargetDescriptor.width;
+                    passData.height = cameraData.cameraTargetDescriptor.height;
+                    passData.slices = singlePassXR ? cameraData.xr.viewCount : 1;
+                    passData.projLeft = cameraData.GetProjectionMatrix(0);
+                    passData.projRight = singlePassXR ? cameraData.GetProjectionMatrix(1) : passData.projLeft;
+
                     builder.UseTexture(passData.color, AccessFlags.ReadWrite);
                     builder.UseTexture(colorCopy, AccessFlags.ReadWrite);
                     if (resourceData.cameraDepthTexture.IsValid())
                         builder.UseTexture(resourceData.cameraDepthTexture, AccessFlags.Read);
 
-                    builder.UseAllGlobalTextures(true);        // _CameraDepthTexture etc.
-                    builder.AllowGlobalStateModification(true); // SetGlobal* calls
+                    builder.UseAllGlobalTextures(true);
+                    builder.AllowGlobalStateModification(true);
                     builder.AllowPassCulling(false);
 
                     builder.SetRenderFunc((PassData data, UnsafeGraphContext ctx) =>
@@ -184,18 +201,17 @@ namespace AmplifyOcclusion
                         CommandBuffer cmd = CommandBufferHelpers.GetNativeCommandBuffer(ctx.cmd);
                         AmplifyOcclusionRenderPass p = data.pass;
 
-                        if (!p.Prepare(cmd, data.camera))
+                        if (!p.Prepare(cmd, data))
                             return;
 
                         RTHandle color = data.color;
                         RTHandle copy = data.colorCopy;
 
-                        Blitter.BlitCameraTexture(cmd, color, copy);
+                        Blitter.BlitCameraTexture(cmd, color, copy); // XR-aware, copies both slices
                         p.Render(cmd, copy, color);
                     });
                 }
             }
-
             public void Dispose()
             {
                 AmplifyOcclusionCommon.SafeReleaseRT(ref m_occlusionDepthRT);
@@ -206,18 +222,6 @@ namespace AmplifyOcclusion
             private TargetDesc m_target = new TargetDesc();
 
             private static readonly int id_ScreenToTargetScale = Shader.PropertyToID("_ScreenToTargetScale");
-
-            void UpdateGlobalShaderConstants(CommandBuffer cb, Camera aCamera)
-            {
-                AmplifyOcclusionCommon.UpdateGlobalShaderConstants(cb, ref m_target, aCamera, settings.Downsample.value, false); // UsingTemporalFilter
-
-                //if( m_hdRender == null )
-                //{
-                // HDSRP _ScreenToTargetScale = { w / RTHandle.maxWidth, h / RTHandle.maxHeight } : xy = currFrame, zw = prevFram
-                // Fill _ScreenToTargetScale for LWSRP
-                cb.SetGlobalVector(id_ScreenToTargetScale, new Vector4(1.0f, 1.0f, 1.0f, 1.0f));
-                //}
-            }
 
             void UpdateGlobalShaderConstants_AmbientOcclusion(CommandBuffer cb, Camera aCamera)
             {
@@ -282,7 +286,7 @@ namespace AmplifyOcclusion
             {
                 //Blit(cb, source, destination, mat, pass);
                 //CoreUtils.SetRenderTarget(cb, destination);
-                cb.SetRenderTarget(destination);
+                cb.SetRenderTarget(destination, 0, CubemapFace.Unknown, -1);
                 //cb.SetRenderTargetWithLoadStoreAction(destination, RenderBufferLoadAction.DontCare, RenderBufferStoreAction.Store);
                 cb.DrawMesh(m_quadMesh, Matrix4x4.identity, mat, 0, pass);
                 //CoreUtils.DrawFullScreen(cb, mat, pass);
@@ -386,14 +390,16 @@ namespace AmplifyOcclusion
                                                                                     width, height,
                                                                                     RenderTextureFormat.RFloat,
                                                                                     RenderTextureReadWrite.Linear,
-                                                                                    FilterMode.Bilinear);
+                                                                                    FilterMode.Bilinear,
+                                                                                    m_target.slices);
 
                         // _AO_CurrDepthSource was previously set
-                        cb.SetRenderTarget(tmpMipRT);
+                        cb.SetRenderTarget(tmpMipRT, 0, CubemapFace.Unknown, -1);
 
                         PerformBlit(cb, m_occlusionMat, ((i == 0) ? ShaderPass.ScaleDownCloserDepthEven_CameraDepthTexture : ShaderPass.ScaleDownCloserDepthEven));
 
-                        cb.CopyTexture(tmpMipRT, 0, 0, m_depthMipmap, 0, i);
+                        for (int s = 0; s < m_target.slices; s++)
+                            cb.CopyTexture(tmpMipRT, s, 0, m_depthMipmap, s, i);
 
                         if (previouslyTmpMipRT != 0)
                         {
@@ -421,7 +427,8 @@ namespace AmplifyOcclusion
                                                                                                 halfWidth, halfHeight,
                                                                                                 m_occlusionRTFormat,
                                                                                                 RenderTextureReadWrite.Linear,
-                                                                                                FilterMode.Bilinear);
+                                                                                                FilterMode.Bilinear,
+                                                                                                m_target.slices);
 
 
                     cb.SetGlobalVector(PropertyID._AO_Target_TexelSize, new Vector4(1.0f / (m_target.fullWidth / 2.0f),
@@ -475,7 +482,7 @@ namespace AmplifyOcclusion
                     //Blit(cb, source, m_occlusionDepthRT, m_occlusionMat, occlusionPass);
 
                     //cb.SetGlobalTexture(PropertyID._MainTex, source);
-                    cb.SetRenderTarget(m_occlusionDepthRT);
+                    cb.SetRenderTarget(m_occlusionDepthRT, 0, CubemapFace.Unknown, -1);
                     cb.DrawMesh(m_quadMesh, Matrix4x4.identity, m_occlusionMat, 0, occlusionPass);
 
                     //cb.SetRenderTarget(default(RenderTexture));
@@ -534,7 +541,7 @@ namespace AmplifyOcclusion
                                                                                 aSourceWidth, aSourceHeight,
                                                                                 m_occlusionRTFormat,
                                                                                 RenderTextureReadWrite.Linear,
-                                                                                FilterMode.Point);
+                                                                                FilterMode.Point, m_target.slices);
 
                 // Apply Cross Bilateral Blur
                 for (int i = 0; i < settings.BlurPasses.value; i++)
@@ -638,7 +645,7 @@ namespace AmplifyOcclusion
                     cb.SetGlobalTexture(PropertyID._MainTex, aSourceRT);
                     //m_applyOcclusionMat.SetTexture("_MainTex", aSourceRT);
 
-                    cb.SetRenderTarget(aDestinyRT);
+                    cb.SetRenderTarget(aDestinyRT, 0, CubemapFace.Unknown, -1);
                     cb.DrawMesh(m_quadMesh, Matrix4x4.identity, m_applyOcclusionMat, 0, ShaderPass.ApplyPostEffect);
                     //Blit(cb, ref renderData, m_applyOcclusionMat, ShaderPass.ApplyPostEffect);
                     //PerformBlit(cb, aDestinyRT, m_applyOcclusionMat, ShaderPass.ApplyPostEffect);
@@ -732,6 +739,7 @@ namespace AmplifyOcclusion
                 {
                     if ((m_occlusionDepthRT.width != m_target.width) ||
                         (m_occlusionDepthRT.height != m_target.height) ||
+                        (m_occlusionDepthRT.volumeDepth != Mathf.Max(m_target.slices, 1)) ||
                         (m_prevMSAA != MSAA) ||
                         //(m_prevFilterEnabled != UsingTemporalFilter) ||
                         //(m_prevFilterDownsample != UsingFilterDownsample) ||
@@ -757,12 +765,10 @@ namespace AmplifyOcclusion
 
                 if (m_occlusionDepthRT == null)
                 {
-                    m_occlusionDepthRT = AmplifyOcclusionCommon.SafeAllocateRT("_AO_OcclusionDepthTexture",
-                                                                                m_target.width,
-                                                                                m_target.height,
-                                                                                m_occlusionRTFormat,
-                                                                                RenderTextureReadWrite.Linear,
-                                                                                FilterMode.Bilinear);
+                                        m_occlusionDepthRT = AmplifyOcclusionCommon.SafeAllocateRT("_AO_OcclusionDepthTexture",
+m_target.width, m_target.height, m_occlusionRTFormat,
+RenderTextureReadWrite.Linear, FilterMode.Bilinear, 1, false, m_target.slices);
+
                 }
 
 
@@ -798,7 +804,8 @@ namespace AmplifyOcclusion
                                                                             RenderTextureReadWrite.Linear,
                                                                             FilterMode.Point,
                                                                             1,
-                                                                            true);
+                                                                            true,
+                                                                            m_target.slices);
 
                     int minSize = (int)Mathf.Min(m_target.fullWidth, m_target.fullHeight);
                     m_numberMips = (int)(Mathf.Log((float)minSize, 2.0f) + 1.0f) - 1;

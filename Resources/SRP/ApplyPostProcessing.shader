@@ -15,8 +15,8 @@ Shader "Hidden/Amplify Occlusion/ApplyPostProcessing"
 		#include "../../Resources/ApplyPostEffect.cginc"
 
 		//TEXTURE2D_SAMPLER2D( _MainTex, sampler_MainTex );
-		sampler2D _MainTex;
-		SamplerState sampler_MainTex;
+		TEXTURE2D_X( _MainTex );
+		SAMPLER( sampler_MainTex );
 
 		PostEffectOutputTemporal ApplyPostEffectTemporal( v2f_in IN, const bool aUseMotionVectors )
 		{
@@ -29,7 +29,7 @@ Shader "Hidden/Amplify Occlusion/ApplyPostProcessing"
 
 			PostEffectOutputTemporal OUT;
 
-			const half4 srcColor = tex2D( _MainTex, UnityStereoTransformScreenSpaceTex( screenPos ) );
+			const half4 srcColor = SAMPLE_TEXTURE2D_X( _MainTex, sampler_MainTex, UnityStereoTransformScreenSpaceTex( screenPos ) );
 
 			if( occlusionDepth.y < HALF_MAX )
 			{
@@ -70,7 +70,7 @@ Shader "Hidden/Amplify Occlusion/ApplyPostProcessing"
 
 			const half4 occlusionRGBA = CalcOcclusion( occlusionLinearEyeDepth.x, occlusionLinearEyeDepth.y );
 			
-			const half4 srcColor = tex2D( _MainTex, UnityStereoTransformScreenSpaceTex( screenPos ) );
+			const half4 srcColor = SAMPLE_TEXTURE2D_X( _MainTex, sampler_MainTex, UnityStereoTransformScreenSpaceTex( screenPos ) );
 
 			const half4 outColor = half4( srcColor.rgb * lerp( (1).xxx, occlusionRGBA.rgb, (srcColor.a).xxx ), srcColor.a );
 
@@ -83,7 +83,7 @@ Shader "Hidden/Amplify Occlusion/ApplyPostProcessing"
 			UNITY_SETUP_INSTANCE_ID( IN );
 			UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX( IN );
 
-			const half4 srcColor = tex2D( _MainTex, IN.uv);
+			const half4 srcColor = SAMPLE_TEXTURE2D_X( _MainTex, sampler_MainTex, IN.uv );
 			half4 outColor = _ApplyPostEffect(IN, srcColor);
 
 			return lerp(srcColor, outColor, _AO_Levels.a);
@@ -97,40 +97,40 @@ Shader "Hidden/Amplify Occlusion/ApplyPostProcessing"
 
 		// -- APPLICATION METHODS --------------------------------------------------------------
 		// 0 => APPLY DEBUG
-		Pass { HLSLPROGRAM half4 frag( v2f_in IN ) : SV_Target { return ApplyDebug( IN ); } ENDHLSL }
+		Pass { HLSLPROGRAM half4 frag( v2f_in IN ) : SV_Target { UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX( IN ); return ApplyDebug( IN ); } ENDHLSL }
 		// 1 => APPLY DEBUG Temporal
-		Pass { HLSLPROGRAM PostEffectOutputTemporal frag( v2f_in IN ) { return ApplyDebugTemporal( IN, false ); } ENDHLSL }
-		Pass { HLSLPROGRAM PostEffectOutputTemporal frag( v2f_in IN ) { return ApplyDebugTemporal( IN, true ); } ENDHLSL }
+		Pass { HLSLPROGRAM PostEffectOutputTemporal frag( v2f_in IN ) { UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX( IN ); return ApplyDebugTemporal( IN, false ); } ENDHLSL }
+		Pass { HLSLPROGRAM PostEffectOutputTemporal frag( v2f_in IN ) { UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX( IN ); return ApplyDebugTemporal( IN, true ); } ENDHLSL }
 
 		// 3 => NOT USED
-		Pass { HLSLPROGRAM half4 frag( v2f_in IN ) : SV_Target { return half4( 255, 0, 255, 1 ); } ENDHLSL }
+		Pass { HLSLPROGRAM half4 frag( v2f_in IN ) : SV_Target { UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX( IN ); return half4( 255, 0, 255, 1 ); } ENDHLSL }
 		// 4 => NOT USED
-		Pass { HLSLPROGRAM half4 frag( v2f_in IN ) : SV_Target { return half4( 255, 0, 255, 1 ); } ENDHLSL }
-		Pass { HLSLPROGRAM half4 frag( v2f_in IN ) : SV_Target { return half4( 255, 0, 255, 1 ); } ENDHLSL }
+		Pass { HLSLPROGRAM half4 frag( v2f_in IN ) : SV_Target { UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX( IN ); return half4( 255, 0, 255, 1 ); } ENDHLSL }
+		Pass { HLSLPROGRAM half4 frag( v2f_in IN ) : SV_Target { UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX( IN ); return half4( 255, 0, 255, 1 ); } ENDHLSL }
 
 		// 6 => NOT USED
-		Pass { HLSLPROGRAM half4 frag( v2f_in IN ) : SV_Target { return half4( 255, 0, 255, 1 ); } ENDHLSL }
+		Pass { HLSLPROGRAM half4 frag( v2f_in IN ) : SV_Target { UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX( IN ); return half4( 255, 0, 255, 1 ); } ENDHLSL }
 		// 7 => NOT USED
-		Pass { HLSLPROGRAM half4 frag( v2f_in IN ) : SV_Target { return half4( 255, 0, 255, 1 ); } ENDHLSL }
-		Pass { HLSLPROGRAM half4 frag( v2f_in IN ) : SV_Target { return half4( 255, 0, 255, 1 ); } ENDHLSL }
+		Pass { HLSLPROGRAM half4 frag( v2f_in IN ) : SV_Target { UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX( IN ); return half4( 255, 0, 255, 1 ); } ENDHLSL }
+		Pass { HLSLPROGRAM half4 frag( v2f_in IN ) : SV_Target { UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX( IN ); return half4( 255, 0, 255, 1 ); } ENDHLSL }
 
 		// 9 => APPLY POST-EFFECT
-		Pass { HLSLPROGRAM half4 frag( v2f_in IN ) : SV_Target { return ApplyPostEffect( IN ); } ENDHLSL }
+		Pass { HLSLPROGRAM half4 frag( v2f_in IN ) : SV_Target { UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX( IN ); return ApplyPostEffect( IN ); } ENDHLSL }
 		// 10 => APPLY POST-EFFECT Temporal
-		Pass { HLSLPROGRAM PostEffectOutputTemporal frag( v2f_in IN ) { return ApplyPostEffectTemporal( IN, false ); } ENDHLSL }
-		Pass { HLSLPROGRAM PostEffectOutputTemporal frag( v2f_in IN ) { return ApplyPostEffectTemporal( IN, true ); } ENDHLSL }
+		Pass { HLSLPROGRAM PostEffectOutputTemporal frag( v2f_in IN ) { UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX( IN ); return ApplyPostEffectTemporal( IN, false ); } ENDHLSL }
+		Pass { HLSLPROGRAM PostEffectOutputTemporal frag( v2f_in IN ) { UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX( IN ); return ApplyPostEffectTemporal( IN, true ); } ENDHLSL }
 
 		// 12 => NOT USED
-		Pass { HLSLPROGRAM half4 frag( v2f_in IN ) : SV_Target { return half4( 255, 0, 255, 1 ); } ENDHLSL }
+		Pass { HLSLPROGRAM half4 frag( v2f_in IN ) : SV_Target { UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX( IN ); return half4( 255, 0, 255, 1 ); } ENDHLSL }
 
 		// 13 => NOT USED
-		Pass { HLSLPROGRAM half4 frag( v2f_in IN ) : SV_Target { return half4( 255, 0, 255, 1 ); } ENDHLSL }
+		Pass { HLSLPROGRAM half4 frag( v2f_in IN ) : SV_Target { UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX( IN ); return half4( 255, 0, 255, 1 ); } ENDHLSL }
 
 		// 14 => APPLY DEBUG Combine from Temporal
-		Pass { HLSLPROGRAM half4 frag( v2f_in IN ) : SV_Target { return ApplyDebugCombineFromTemporal( IN ); } ENDHLSL }
+		Pass { HLSLPROGRAM half4 frag( v2f_in IN ) : SV_Target { UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX( IN ); return ApplyDebugCombineFromTemporal( IN ); } ENDHLSL }
 
 		// 15 => APPLY POST-EFFECT Combine from Temporal
-		Pass { HLSLPROGRAM half4 frag( v2f_in IN ) : SV_Target { return ApplyPostEffectCombineFromTemporal( IN ); } ENDHLSL }
+		Pass { HLSLPROGRAM half4 frag( v2f_in IN ) : SV_Target { UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX( IN ); return ApplyPostEffectCombineFromTemporal( IN ); } ENDHLSL }
 	}
 
 	Fallback Off
