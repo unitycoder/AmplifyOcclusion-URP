@@ -107,14 +107,6 @@ public static class AmplifyOcclusionCommon
 	{
 	#if UNITY_EDITOR
 		return aCamera.stereoEnabled && ( PlayerSettings.stereoRenderingPath == StereoRenderingPath.SinglePass );
-	#else
-
-		#if UNITY_2017_2_OR_NEWER && !UNITY_SWITCH && !UNITY_XBOXONE && !UNITY_PS4
-			return	aCamera.stereoEnabled && ( UnityEngine.XR.XRSettings.eyeTextureDesc.vrUsage == VRTextureUsage.TwoEyes );
-		#else
-			return	false;
-		#endif
-
 	#endif
 	}
 
@@ -122,14 +114,6 @@ public static class AmplifyOcclusionCommon
 	{
 	#if UNITY_EDITOR
 		return aCamera.stereoEnabled && ( PlayerSettings.stereoRenderingPath == StereoRenderingPath.MultiPass );
-	#else
-
-		#if UNITY_2017_2_OR_NEWER && !UNITY_SWITCH && !UNITY_XBOXONE && !UNITY_PS4
-			return	aCamera.stereoEnabled && ( UnityEngine.XR.XRSettings.eyeTextureDesc.vrUsage == VRTextureUsage.OneEye );
-		#else
-			return	false;
-		#endif
-
 	#endif
 	}
 

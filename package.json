@@ -1,0 +1,11 @@
+{
+  "name": "com.amplify.occlusion-urp",
+  "displayName": "Amplify Occlusion URP",
+  "version": "2.0.0",
+  "unity": "2022.2",
+  "description": "Amplify Occlusion V2 ported to URP.",
+  "license": "MIT",
+  "dependencies": {
+    "com.unity.render-pipelines.universal": "17.0.3"
+  }
+}
