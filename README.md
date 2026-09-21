@@ -2,9 +2,6 @@
 https://github.com/AmplifyCreations/AmplifyOcclusion \
 Fork: Ported to **URP 6000.3**
 
-### Requirements
-* <b>com.unity.postprocessing</b> package installed! (uses StdLib.hlsl, I'd need to remove this dependency)
-
 ### How to use
 * Add Amplify Occlusion in Volume component
 * Add Amplify Occlusion RendererFeature in URP Renderer Asset
