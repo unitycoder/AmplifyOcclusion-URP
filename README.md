@@ -1,6 +1,6 @@
 # AmplifyOcclusion-URP
 https://github.com/AmplifyCreations/AmplifyOcclusion \
-Ported in **URP 2022.2**, but might work in older versions.
+Fork: Ported to **URP 6000.3**
 
 ### Requirements
 * <b>com.unity.postprocessing</b> package installed! (uses StdLib.hlsl, I'd need to remove this dependency)
