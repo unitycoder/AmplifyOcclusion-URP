@@ -295,10 +295,7 @@ void GetGTAO(	const v2f_in ifrag,
 	const half vdirXYDot = dot( vdir.xy, vdir.xy );
 
 	const half radiusToScreen = radius * _AO_HalfProjScale;
-	// DISTANT_GTAO_PATTERN_FIX
-	const half projectedRadius = min( radiusToScreen / max( vpos.z, 0.0001 ), PIXEL_RADIUS_LIMIT );
-	const half screenRadius = max( projectedRadius, (half)stepCount );
-	const half projectedRadiusFade = smoothstep( 1.0, 4.0, projectedRadius );
+	const half screenRadius = max( min( radiusToScreen / vpos.z, PIXEL_RADIUS_LIMIT ), (half)stepCount );
 
 	const half twoOverSquaredRadius = 2.0 / ( radius * radius );
 
@@ -401,7 +398,7 @@ void GetGTAO(	const v2f_in ifrag,
 	occlusionAcc /= (half)directionCount;
 	//colorBleed /= (half)directionCount;
 
-	const half outAO = lerp( 1.0, saturate( occlusionAcc ), projectedRadiusFade );
+	const half outAO = saturate( occlusionAcc );
 
 	outRGBA = half4( (1).xxx, outAO );
 	//outRGBA = colorBleed;

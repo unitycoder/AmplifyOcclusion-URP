@@ -13,8 +13,7 @@ half4 GTAO( const v2f_in ifrag, const bool useDynamicDepthMips, const int direct
 	half outDepth;
 	half4 outRGBA;
 
-	//GetGTAO( ifrag, useDynamicDepthMips, directionCount, sampleCount / 2, normalSource, outDepth, outRGBA );
-    GetGTAO(ifrag, useDynamicDepthMips, directionCount, sampleCount / 2, NORMALS_NONE, outDepth, outRGBA);
+	GetGTAO( ifrag, useDynamicDepthMips, directionCount, sampleCount / 2, normalSource, outDepth, outRGBA );
 
 	// https://stackoverflow.com/questions/41566049/understanding-unitys-rgba-encoding-in-float-encodefloatrgba
 	//outRGBA = min(outRGBA, 0.9999);
